@@ -1,0 +1,475 @@
+---
+title: "MEDIA Raw Data Tidy and Clean Workflow"
+author: "Eric Wang / MSU"
+date: "September 22, 2015"
+output:
+  html_document:
+    theme: readable
+---
+
+---
+
+Due to the diverse sources of Ford competitors media data from different markets, we have to clean up and integrate them into the same format, for the accuracy and quick queries.
+
+This document explains the workflow of data cleaning. The basic concept is to read the raw data into R memory, clean them to the same format by R function, then check if the cleaned data is correct and finally write to the MySQL database in a remote server.
+
+---
+
+There are mainly 3 parts in this document:
+
+- **Preparation**
+
+- **Raw Data Cleaning**
+
+- **Check up and Output**
+
+---
+
+To clean the fresh data, first of all you are supposed to have the files below: 
+
+- **Raw data:** The raw file, depends on the market;
+- **The basefile:** currently  'ALL_NAMEPLATES.csv';
+- **The priorfile:** currently 'PRIORITY.csv';
+- **The subfile:** currently 'SUB.csv'.
+
+---
+
+About the files:
+
+- **1. The file format:** 
+
+All the input data files should be of format '.csv', and you would better comfirm the contents of each column are rigth after save as '.csv' file. For example the date type in '.xlsx' file can be `12-Jan`, after save as '.csv', it may turns to be a number instead of a date;
+
+- **2.The rawfile:** 
+
+Different markets have different forms of raw data, save it as '.csv' file. Remember we just need the columns we want, so it is necessary to check the contents of each column in the raw data first, and then check if the default column number in the program is correct;
+
+*For example in Australia, the __rawfile__ maybe look like this:*
+    
++----------+------+--------------------------+----------------------+-------------------------+---------------+----------------------+-----+
+|   Month  | Year |           Brand          |        Product       |         Channel         | Cleaned.Brand |   Cleaned.Nameplate  | ... |
++==========+======+==========================+======================+=========================+===============+======================+=====+
+| 2011/1/1 | 2011 | Alfa Romeo Australia P/L | Alfa Romeo Giulietta | Metropolitan Television |   Alfa Romeo  | ALFA ROMEO GIULIETTA | ... |
++----------+------+--------------------------+----------------------+-------------------------+---------------+----------------------+-----+
+| 2011/1/1 | 2011 | Alfa Romeo Australia P/L | Alfa Romeo Giulietta |    Metropolitan Press   |   Alfa Romeo  | ALFA ROMEO GIULIETTA | ... |
++----------+------+--------------------------+----------------------+-------------------------+---------------+----------------------+-----+
+| ...      | ...  | ...                      | ...                  | ...                     | ...           | ...                  | ... |
+
+
+*In this case, the 1st, 3rd, 4th, 5th, 6th... columns are what we need, you have to look through whether the default column number below matchs the rawfile table.*
+    
+```
+    #The default column number in [ AUSTRALIA ] is: 
+ 
+    #col_b(Brand)= 3 
+    #col_p(Product)= 4 
+    #col_spd(Spend,adjusted K USD)= 15 
+    #col_chnl(Channel/Media)= 5 
+    #col_ymd(YearMonthDay)= 1 
+    #col_cat(Category)= NA 
+```
+
+- **3. The basefile:** 
+
+All the nameplates we cleand from the raw data are stored in the basefile. It is also the very basic file for further data cleaning. It is suggested to add new nameplates to the basefile if necessary when they appear in the coming raw data. Also, if you find some wrong nameplates in the basefile, correct them;
+
+*The __basefile__ should be like this:*
+
++-----------+--------------------+---------------+--------+------------+-------+------------------+-----+
+|   MARKET  |  REGIONAL.SEGMENT  | LOCAL.SEGMENT | FAMILY |    BRAND   | MODEL |    DESCRIPTION   | ... |
++===========+====================+===============+========+============+=======+==================+=====+
+| AUSTRALIA |   CD PREMIUM CAR   |   Medium Car  |   FCA  | ALFA ROMEO |  159  |  Alfa Romeo 159  | ... |
++-----------+--------------------+---------------+--------+------------+-------+------------------+-----+
+| AUSTRALIA | SPORTS PREMIUM CAR |   Sports Car  |   FCA  | ALFA ROMEO | BRERA | Alfa Romeo Brera | ... |
++-----------+--------------------+---------------+--------+------------+-------+------------------+-----+
+| ...       | ...                | ...           | ...    | ...        | ...   | ...              | ... |
+
+
+- **4. The priorfile:** 
+
+During the clean process, there are rows containing raw info that may match more than one brand or model name, For the sake of tidy data, it is supposed to clean them to only one or none! The priorfile gives a reference list about which priority of brand/model we should follow. Remember that the prior brand name or model name choosed should be based on the original brand and product, it should also be based on the fact. it is strongly recommended to google it if you encounter ambiguous case in the future.
+
+*The __priorfile__ should be like this:*
+
++-------+---------------------+----------+---------------+---------+---------------+------------+-----+
+| INDEX |        CHINA1       |  CHINA2  |     CHINA3    |  CHINA4 |   AUSTRALIA1  | AUSTRALIA2 | ... |
++=======+=====================+==========+===============+=========+===============+============+=====+
+|   1   | AUDI;FAW;VOLKSWAGEN |   AUDI   | ZUNGUI;ZUNJIA |  ZUNGUI |    BMW;MINI   |    MINI    | ... |
++-------+---------------------+----------+---------------+---------+---------------+------------+-----+
+|   2   |    BAW;CHRYSLER     | CHRYSLER | ELANTRA;VERNA | ELANTRA | CHRYSLER;JEEP |    JEEP    | ... |
++-------+---------------------+----------+---------------+---------+---------------+------------+-----+
+|  ...  |    ...              |   ...    |  ...          |   ...   |  ...          |    ...     | ... |
+
+*In this table, you can simply distinguish each market by the market name, the market 1/2/3/4 contain respectively stands for the multiple brands, the prior brand, the multiple models, the prior model. For example in China, CHINA1 contains one of the multiple brands, CHINA2 contains the prior brand name that we should follow...*
+
+*During the cleaning process, if the multiple brands/models already exist in this list, It will clean them automatically based on the priority choosed before. If not, you'll have to follow the program to choose a prior brand/model and add to the right column of the list.*
+
+- **5. The subfile:**
+
+After look through the raw data, you may find that there are lots of typos in nameplates. In China, the chinese nameplates should be cleaned to the corresponding english nameplates. The subfile gives a list of incorrect nameplates and the corrected version or substitution.
+
+*The __subfile__ should be like this:*
+
++-------+--------+----------+-------------+------------+----------+-----------+-----+
+| CHINA | CHINA1 |  CHINA2  |  INDONESIA1 | INDONESIA2 |  INDIA1  |   INDIA2  | ... |
++=======+========+==========+=============+============+==========+===========+=====+
+|  风行 |  风行  | FENGXING |   SINOTRUK  |  SINOTRUCK |  RETXON  |   REXTON  | ... |
++-------+--------+----------+-------------+------------+----------+-----------+-----+
+|       |  迷你  |   MINI   | HYUNDAI H-1 | HYUNDAI H1 | SSANYONG | SSANGYONG | ... |
++-------+--------+----------+-------------+------------+----------+-----------+-----+
+| ...   |  ...   |   ...    |    ...      |    ...     |   ...    |   ...     | ... |
+
+*In this table, you can easily find it is similar to the priorfile, but the market 1/2 respectively stands for the incorrect nameplates and the substitution. For example in China, CHINA1 stands for the Chinese nameplates or the incorrect nameplates, while CHINA2 stands for the English nameplates or the subtitution.*
+
+-------------
+
+
+If it is the __first time__ you clean the data, Here several tips to keep in mind:
+
+- __Brand:__ 
+    
+    * There are same brand of different spelling. For example in China, the brand name`CHANA` should be cleaned to `CHANGAN` ;
+    * There are typos in brand name. For example `DAWOO` should be `DAEWOO`; 
+    * In terms of multiple brands. For example, in most condition `CHRYSLER;JEEP/DODGE` should be cleaned to `JEEP/DODGE`, because `CHRYSLER` here is a group name which stands for the family name `FCA`(The family of Jeep/Dodge).  [*Refer to wikipedia:Chrysler*](https://en.wikipedia.org/wiki/Chrysler)
+    * When encountering a new brand name, you are suggested to confirm it on __GOOGLE__ and then add it to the basefile.
+
+- __Model__ 
+
+    * Similar to the brand name, There  are also typos or local language characters regarding. For example, in China, there are lots of Chinese nameplates, which are listed in the subfile. 
+    * In terms of multiple models, for the case like `MX-5;MX 5`, it should be cleaned to `MX-5`. When different models come together, such as `BMW 3 SERIES/5 SERIES CAR`, we can not decide which model to clean, such rows can be cleaned to `BRAND`. Besides there  are other conditions that you should compare to the raw data and choose the reasonable one;
+    * The `BMW SERIES`, `LEXUS SERIES` and `MERCEDES BENZ CLASS`. For example the `BMW 125i` will be cleaned to `BMW 1 SERIES` and `MERCEDES BENZ A 150 ` to "MERCEDES BENZ A CLASS" .
+    
+- __Family__
+
+    * The Diverse family, for example `VOLVO`, parts of it belong to `GEELY`, and other belongs to `VOLVO`,you can figure out it in wikipedia;
+    * If a brand with a specific model name, then the family can be matched according to the basefile,otherwish if a brand doesn't have a model, then this row will match the family only by its brand name, in that case, if this brand in the specific market can match 2 or more family, then we can not besure which family this brand belongs, so you may suggested to check the basefile and then decide to clean this brand's family to `BRNAD`;
+    
+- __Segment__
+
+    * There are rows that don't match any segment information in the basefile, clean them to `OTHER`
+    * For those rows that can match 2 or more segment infomation, clean them to a combnined segment like `A SEMENT/ B SEGMENT/...`
+    
+- __Channel__
+    
+    * Channel cleaning is based on the list below. For example, the `TELEVISION`,`CATV` will be cleaned to `TV`. You are suggested to add new channels which never exist in the list to the R script. (You can search `e$find_channel` to locate it in the script).
+    
+    ```
+    list(TV = c("TV", "TELEVISION","CATV"), 
+        NEWSPAPER = c("NEWSPAPER", "NP", "NEWSPAPERS", "PRESS"), 
+        MAGAZINE = c("MAGAZINE", "MG", "MAGAZINES","MZ"), 
+        ONLINE = c("ONLINE","ON LINE","CABLE", "INTERNET", "DIGITAL"), 
+        OOH = c("OOH", "OD", "OUT OF HOME", "OUTDOOR", "MS"), 
+        RADIO = c("RADIO", "RD"), 
+        CINEMA = "CINEMA", 
+        PRINT = "PRINT", 
+        MAIL = "MAIL",
+        MOBILE = "MOBILE",
+        "IN-STORE" = "IN-STORE")
+    ```
+
+- __Spend__
+
+    * In __India__, some rows have other spends except the nameplate level spend, those spends are counted by `the spend of brand level - the spend of nameplate level`, and those rows are added to the cleaned data by `rbind()`, so you will find in the cleaned data of __India__, the rows added from brand level have no model info.
+    
+    
+    
+--------
+
+
+
+##Part I: Preparation.
+
+**1. Update your R/Rstudio Version if it is necessary:**
+
+* [*Click here to download the latest R*](https://cran.r-project.org/bin/windows/base/)
+
+* [*Click here to download the latest RStudio*](https://www.rstudio.com/products/rstudio/download/)
+
+**2. Get/ set the working directory of your R:**
+
+- By `getwd()` you get the present working directory;
+- By `setwd()` you set the working directory to wherever you want.
+
+```{r,eval = F}
+getwd()   # "Documents" under "user" folder by default.
+setwd("~/.") 
+```
+
+**3. Make sure the following files are in your working directory:**
+
+- The rawfile
+- The subfile
+- The basefile
+- The priorfile
+- The R script
+
+**4. Packages:**
+
+Make sure you have installed the packages below:
+
+- `dplyr`
+- `tidyr`
+- `RMySQL`
+
+```{r, eval = F}
+require(dplyr)
+require(tidyr)
+require(RMySQL)
+```
+
+**5. Source R script:**
+
+
+```{r, eval = F}
+source("media_db_cln.R") 
+```
+
+
+
+
+
+## Part II: Raw Data Cleaning
+
+**1. Call function `data_cln()` to start:**
+
+- Normally you only need to enter the rawfile name in the function.
+*Such as: `data_cln("Raw_CHINA.csv")`*;
+
+- The subfile, basefile, priorfile are set by default to "SUB.csv", "ALL_NAMEPLATES.csv", "PRIORITY.csv";
+
+- If those file names are changed, you have to specity the new names.
+
+```{r, eval = F}
+data_cln(rawfile,subfile,priorfile,basefile)
+```
+
+**2. Choose the market:**
+
+```
+# Please Choose Market
+# 
+# [1].AUSTRALIA
+# [2].INDIA
+# [3].INDONESIA
+# [4].SOUTH KOREA
+# [5].TAIWAN
+# [6].NEW ZEALAND
+# [7].VIETNAM
+# [8].CHINA
+# [9].THAILAND
+# [10].PHILIPPINES
+# Choose Market: 1
+
+```
+
+
+**3. Check up column number:**
+
+The number of columns in different markets are assigned with respective default values in the function. By looking through the raw data, if you find the column number incorrect, you can change the number if you want.
+
+*Just enter "Y" if you want to change the number of columns*
+
+*If there are columns not avaiable in the raw data (Probably 'col_cat'), you should assign it to 'NA'*
+
+
+```
+# The default column number in [ CHINA ] is: 
+#     
+# col_b(~ Brand)= 1    
+# col_p(~ Product)= 2     
+# col_spd(~ Spend)= 11   
+# col_chnl(~ Channel)= 7   
+# col_ymd(~ YearMonthDay)= 6    
+# col_cat(~ Category)= 3    
+# 
+#
+# Do you want to change the column number? (Y/N):y
+
+```
+
+
+
+**4. Raw data input and preprocessing**
+
+- Rows containing those key words below in the raw data will finally be cleaned to the `OTHER`
+- Rows containing incorrect nameplates will be replaced by the correct ones based on the subfile we created.
+
+```
+e$ind_others <- which(grepl(turn_exp1("AIRBUS"),e$BP) == T   
+                            | grepl(turn_exp1("BIKE"),e$BP) == T 
+                            | grepl(turn_exp1("BICYCLE"),e$BP) == T
+                            | grepl(turn_exp1("AIRPLANE"),e$BP) == T
+                            | grepl(turn_exp1("PLANE"),e$BP) == T
+                            | grepl(turn_exp1("AMBULANCE"),e$BP) == T
+                            | grepl(turn_exp1("TRACTOR"),e$BP) == T
+                            | grepl(turn_exp1("MOTOCYCLE"),e$BP) == T
+                            | grepl(turn_exp1("MOTORCYCLE"),e$BP) == T
+                            | grepl(turn_exp1("MOTOBICYCLE"),e$BP) == T
+                            | grepl(turn_exp1("AGRICULTURE"),e$BP) == T)
+        
+```
+
+
+**5. Find brands and models in the specific market**
+
+- For `e$find_brand(x)`, if `x` is set to 1, it will looks for brands in the market you specified.
+Otherwise it turns to brands in other markets;
+
+- For `e$find_model(x)`, if `x` set to 1, it will looks for models in the market you specified.
+Otherwise it turns to models in other markets;
+
+
+**6. Find brands and models in other markets**
+
+The brands/models which not found in the specific market can probably be found in other markets. So, once a brand or model allocated in the other markets, you may update the basefile according the brands/models found in other markets.
+
+*Those brands/models found in other market are saved to the file 'FoundInOtherMarkets_xxx.csv', you can check it and then update the basefile.*
+
+**7. Clean multiple brands/models**
+
+The priority list is currently saved in the file 'PRIORITY.csv'. If the prior brands/models already exist in the list, the program cleans them automatically based on the list. Otherwise you will have to choose the prior brand/model one by one.
+
+##### When choosing prior brand/model name:
+
+```
+# Enter the brand Name or Number to select, q to quit!
+#     
+# -------------------------------
+# Choose a brand below: 
+# [ 1 ]  DATSUN 
+# [ 2 ]  NISSAN 
+# Compare to the original: 
+# [ Original Brand :]  NISSAN
+# [Original Product:]  DATSUN - ALL CAR
+# -------------------------------------------
+#     
+# Choose a brand: 
+```
+
+- Always Choose a prior brand/model based on the reality;
+- Compare to the original brand & produt, choose the reasonable one;
+- If you are not sure which to choose, Google!
+- For rows really not sure, just press 'ENTER', they will be cleaned to `OTHER`.
+- If you have finish choosing the prior brand/ model, the prior list will temporary saved in 'BRAND_PRIOR.csv' or 'MODEL_PRIOR.csv', you have to copy the list to the priorfile before clean the brand/ model.
+- *Make sure you have copy the prior list you choosed to the priorfile, and saved it to your working directory, then you can start clean brand/model.*
+- *For the priorfile have about 40 columns of all the markets, make sure you have copied the list to the right column of the priorfile*
+
+
+**8. Family/ Segment/ Channel/ RGNL_MTRPLTN/ Category/ BDR/ Spend**
+
+---
+
+- **Family:** In general, we match the family according to the brand and the model name,but sometimes there are brands matching no models. In this case, if this brand in the specific market matches two or more families, we can not decide which family this brand belongs to only by its brand name, the family will be cleaned to `OTHER`;
+
+- **Segment:** In general, a brand with a right model name matches a specific segment (including Regional Segment & Local Segment), however there are cases matching two or three segments in the basefile, they will be cleaned to a form like 'A SEGMENT/ B SEGMENT';
+
+- **Channel:** The different channel names which stand for the same thing will be cleaned to the same name as 'TV','NEWSPAPER','MAGAZINE'...
+
+*Special in India: The spend is the sum of 'TV+PRINT+RADIO'*
+
+
+- **RGNL_MTRPLTN:** Which means 'Regional Metropolitan', only in __Australia__ you can find Metropolitan avaiable, for example 'Metropolitan Television', 'Metropolitan press';
+
+- **Category:** Not available in some markets ;
+
+- **BDR:** Which stands for brand, dealer and retail, decided by the key words like 'Dealer', 'retail', 'Range'...
+
+- **Spend:** Normally we choose the Adjusted Spend K USD;
+
+    
+---
+
+
+## Part III: Check up and Output
+
+**1.  Check up the Cleaned Data:**
+
+it is always necessary to check the cleaned data before write it to the MySQL database.
+By checking the cleaned data, you may find the rows with brands/models not found or the typos in the raw data, or the disordered columns. The wrong nameplates may vary from market to market, when you find a wrong nameplate in the specific market, remember to add it to the right column in the subfile.
+
+If a brand is not include in the basefile, remember to google it and update it to the basefile.
+
+To check the cleaned data, you can refer to the distinct file saved in your working directory.
+
+*For example in Australia, the file is `DistinctCleanedCheck_AUSTRALIA.csv`*
+
+*By the 1st column `CheckItem`, you can easily check the Family/Brand/Model... that is cleaned to OTHER or BRAND...*
+
++---------------+-----------+----------+--------+------------+-------+-----------------------------+------------------------+-----+
+|   CheckItem   |   MARKET  |    YMD   | FAMILY |    BRAND   | MODEL |          BRAND_ORI          |       PRODUCT_ORI      | ... |
++===============+===========+==========+========+============+=======+=============================+========================+=====+
+| FAMILY/ BRAND | AUSTRALIA | 2011/1/1 |  OTHER |    OTHER   | OTHER | TRANSALLOY                  |  TRANSALLOY TRUCK MNF  | ... |
++---------------+-----------+----------+--------+------------+-------+-----------------------------+------------------------+-----+
+|   MODEL       | AUSTRALIA | 2011/1/1 |   FCA  | ALFA ROMEO | BRAND | ALFA ROMEO DEALER GROUP NSW | ALFA ROMEO DLR GRP NSW | ... |
++---------------+-----------+----------+--------+------------+-------+-----------------------------+------------------------+-----+
+| ...           | ...       | ...      | ...    | ...        | ...   | ...                         | ... 
+
+
+
+**2. Output**
+
+- (1). Write the '.csv' file:
+
+    *For manual checking, or just for backup*
+
+```{r,eval=F}
+write.csv(e$output,filename,row.names = F)
+
+```
+
+*For example the outputfile in __Australia__ is `Clean_AUSTRALIA.csv`:*
+
++-----------+----------+--------+------------+-----------+--------------------------+----------------------+-----------------+-----+
+|   MARKET  |    YMD   | FAMILY |    BRAND   |   MODEL   |         BRAND_ORI        |      PRODUCT_ORI     |   REGIONAL.SEG  | ... |
++===========+==========+========+============+===========+==========================+======================+=================+=====+
+| AUSTRALIA | 2011/1/1 |   FCA  | ALFA ROMEO | GIULIETTA | Alfa Romeo Australia P/L | Alfa Romeo Giulietta | B/C PREMIUM CAR | ... |
++-----------+----------+--------+------------+-----------+--------------------------+----------------------+-----------------+-----+
+| AUSTRALIA | 2011/1/1 |   FCA  | ALFA ROMEO | GIULIETTA | Alfa Romeo Australia P/L | Alfa Romeo Giulietta | B/C PREMIUM CAR | ... |
++-----------+----------+--------+------------+-----------+--------------------------+----------------------+-----------------+-----+
+| ...       | ...      | ...    | ...        | ...       | ...                      | ...                  | ...             | ... |
+
+
+- (2). Write the data to the MySQL database
+    
+    - First build a connection between MySQL and R
+    - Then choose a table in MySQL media database, currently we choose `clean`
+    - Insert the new cleaned data to MySQL
+    
+```{r, eval = F}
+con <- dbConnect(MySQL(), 
+                host = "**********", 
+                port = 3306, 
+                db = "media",
+                user = "MSU_DB_Manager", 
+                password = "Embarassing")
+```
+
+```
+---------------------
+
+ The tables in the Media database are:
+
+ [ 1 ]clean
+ [ 2 ]test
+--------------------------
+ Chose a table to insert into: 1
+```
+
+```{r,eval = F}
+db_insert_into(con, 
+               table = e$tablename, 
+               value = e$output)
+```
+
+
+
+***
+
+*That's the entire workflow to clean the raw data and insert the cleaned data to MySQL database!*
+
+*Enjoy!*
+
+
+***
+
+
